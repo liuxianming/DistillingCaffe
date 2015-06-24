@@ -82,7 +82,8 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   CHECK(batch->data_.count());
   CHECK(this->transformed_data_.count());
 
-  // Reshape on single input batches for inputs of varying dimension.
+  // Reshape according to the first datum of each batch
+  // on single input batches allows for inputs of varying dimension.
   const int batch_size = this->layer_param_.data_param().batch_size();
   const int crop_size = this->layer_param_.transform_param().crop_size();
   bool force_color = this->layer_param_.data_param().force_encoded_color();
@@ -107,6 +108,7 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   if (this->output_labels_) {
     top_label = batch->label_.mutable_cpu_data();
   }
+  timer.Start();
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     // get a blob
     timer.Start();
@@ -134,11 +136,8 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     timer.Start();
     int offset = batch->data_.offset(item_id);
     this->transformed_data_.set_cpu_data(top_data + offset);
-    if (datum.encoded()) {
-      this->data_transformer_->Transform(cv_img, &(this->transformed_data_));
-    } else {
-      this->data_transformer_->Transform(datum, &(this->transformed_data_));
-    }
+    this->data_transformer_->Transform(datum, &(this->transformed_data_));
+    // Copy label.
     if (this->output_labels_) {
       top_label[item_id] = datum.label();
     }
@@ -146,6 +145,7 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 
     reader_.free().push(const_cast<Datum*>(&datum));
   }
+  timer.Stop();
   batch_timer.Stop();
 
 #ifdef BENCHMARK_DATA

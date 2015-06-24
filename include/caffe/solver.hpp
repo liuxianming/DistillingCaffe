@@ -12,7 +12,7 @@ namespace caffe {
 /**
  * @brief An interface for classes that perform optimization on Net%s.
  *
- * Requires implementation of ComputeUpdateValue to compute a parameter update
+ * Requires implementation of ApplyUpdate to compute a parameter update
  * given the current state of the Net parameters.
  */
 template <typename Dtype>

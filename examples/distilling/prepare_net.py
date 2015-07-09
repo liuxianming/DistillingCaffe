@@ -60,6 +60,7 @@ def get_solver(train_net, test_net,
     solver_param.display = display
     solver_param.average_loss = display
     solver_param.base_lr = 0.01
+    solver_param.lr_policy = 'step'
     solver_param.stepsize = stepsize
     solver_param.gamma = 0.96
     solver_param.max_iter = max_iter

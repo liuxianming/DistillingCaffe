@@ -5,6 +5,7 @@ test_interval: 2000
 base_lr: 0.01
 display: 40
 max_iter: 100000
+lr_policy: "step"
 gamma: 0.96
 momentum: 0.9
 weight_decay: 0.0002

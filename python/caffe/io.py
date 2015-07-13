@@ -6,6 +6,8 @@ from skimage.transform import resize
 try:
     # Python3 will most likely not be able to load protobuf
     from caffe.proto import caffe_pb2
+    from ._caffe import *
+    # support wrapped io functions
 except:
     import sys
     if sys.version_info >= (3, 0):
@@ -13,6 +15,31 @@ except:
     else:
         raise
 
+"""
+Read image into datum, using c++ wrapped function
+By default, it will read encoded image data, using jpeg encoding, and decoded into color mode
+Return a Datum variable
+"""
+def read_datum_from_image(
+        filename, label=0, height=0,
+        width=0, is_color=True, encoding='.jpg'):
+    datum = caffe_pb2.Datum()
+    data = read_image_to_datum_str(filename, label, height, width, is_color, encoding)
+    if len(encoding) > 0:
+        datum.encoded = True
+    else:
+        datum.encoded = False
+    datum.data = data
+    return datum
+
+"""
+Decode encoded datum into non-encoded version
+"""
+def decode_datum(datum, is_color=True):
+    decoded_datum_str = decode_datumstr(datum.data, datum.encoded, is_color)
+    datum = caffe_pb2.Datum()
+    datum.ParseFromString(decoded_datum_str)
+    return datum
 
 ## proto / datum / ndarray conversion
 def blobproto_to_array(blob, return_diff=False):

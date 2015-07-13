@@ -2,7 +2,7 @@ train_net: "examples/distilling/train_site.prototxt"
 test_net: "examples/distilling/test_site.prototxt"
 test_iter: 250
 test_interval: 2000
-base_lr: 0.01
+base_lr: 0.001
 display: 40
 max_iter: 100000
 lr_policy: "step"

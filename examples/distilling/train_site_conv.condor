@@ -1,11 +1,10 @@
 # condor jobs
 # -----------------------------------------
 # Job descriptions
-condor_job_size = 1
 
 INITIALDIR = /mnt/ilcompf0d0/user/xliu/code/caffe
 Executable = $(INITIALDIR)/examples/distilling/train_site_conv.sh
-Requirements = TARGET.Machine=="ilcomp40"
+Requirements = TARGET.Machine=="ilcomp30"
 Arguments = $(Cluster) $(Process) $(condor_job_size)
 
 # Env settings
@@ -22,4 +21,4 @@ transfer_executable = false
 notify_user = xliu@adobe.com
 
 # Start jobs
-Queue $(condor_job_size)
+Queue 1

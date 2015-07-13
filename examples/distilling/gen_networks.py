@@ -9,6 +9,30 @@ from caffe import layers as L, params as P, to_proto
 from caffe.proto import caffe_pb2
 import os, os.path
 
+def alexnet(data_lmdb, mean_value, mean_file, label_lmdb,
+                 nout, lossfunction='CrossEntropy'):
+    data, label = prepare_net.data_layer(data_lmdb, mean_value, mean_file, label_lmdb)
+    conv1, relu1 = prepare_net.conv_relu(data, 11, 96, stride=4)
+    pool1 = prepare_net.max_pool(relu1, 3, stride=2)
+    conv2, relu2 = prepare_net.conv_relu(pool1, 5, 256, pad=2, group=2)
+    pool2 = prepare_net.max_pool(relu2, 3, stride=2)
+    conv3, relu3 = prepare_net.conv_relu(pool2, 3, 384, pad=1)
+    conv4, relu4 = prepare_net.conv_relu(relu3, 3, 384, pad=1, group=2)
+    conv5, relu5 = prepare_net.conv_relu(relu4, 3, 384, pad=1, group=2)
+    pool5 = prepare_net.max_pool(relu5, 3, stride=2)
+    fc6, relu6 = prepare_net.fc_relu(pool5, 4096)
+    drop6 = L.Dropout(relu6, in_place=True)
+    fc7, relu7 = prepare_net.fc_relu(drop6, 4096)
+    drop7 = L.Dropout(relu7, in_place=True)
+    fc8 = L.InnerProduct(drop7, num_output=nout)
+    if lossfunction == 'CrossEntropy':
+        #loss = L.SigmoidCrossEntropyLoss(g_aver_pooling, sigmoid_label)
+        loss = L.SigmoidCrossEntropyLoss(fc8, label)
+    elif lossfunction == 'SoftmaxLoss':
+        loss = L.SoftmaxWithLoss(fc8, label)
+        #loss = L.SoftmaxWithLoss(g_aver_pooling, sigmoid_label)
+    return to_proto(loss)
+
 def all_conv_net(data_lmdb, mean_value, mean_file, label_lmdb,
                  nout, lossfunction='CrossEntropy'):
     # prepare data and label layer
@@ -30,28 +54,37 @@ def all_conv_net(data_lmdb, mean_value, mean_file, label_lmdb,
     # global average pooling
     g_aver_pooling = prepare_net.aver_pool(relu9)
     # adding loss layer
-    sigmoid_label = L.Sigmoid(label)
+    # sigmoid_label = L.Sigmoid(label)
     if lossfunction == 'CrossEntropy':
-        loss = L.SigmoidCrossEntropyLoss(g_aver_pooling, sigmoid_label)
+        #loss = L.SigmoidCrossEntropyLoss(g_aver_pooling, sigmoid_label)
+        loss = L.SigmoidCrossEntropyLoss(g_aver_pooling, label)
     elif lossfunction == 'SoftmaxLoss':
-        loss = L.SoftmaxWithLoss(g_aver_pooling, sigmoid_label)
+        loss = L.SoftmaxWithLoss(g_aver_pooling, label)
+        #loss = L.SoftmaxWithLoss(g_aver_pooling, sigmoid_label)
     return to_proto(loss)
 
 def gen_field_network():
     train_field_net_fn = 'train_field.prototxt'
     test_field_net_fn = 'test_field.prototxt'
     with open(train_field_net_fn, 'w') as f:
-        print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image',
-                                #None, './examples/distilling/behance.binaryproto',
-                                [104, 117, 123], None,
-                                '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/field',
-                                nout=67)
+        print >>f, all_conv_net(
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image',
+            '/scratch/be/LMDB/TRAINING/image',
+            None, './examples/distilling/behance.binaryproto',
+            #[104, 117, 123], None,
+            '/scratch/be/LMDB/TRAINING/field',
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/field',
+            nout=67)
 
     with open(test_field_net_fn , 'w') as f:
-        print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image',
-                                #None, './examples/distilling/behance.binaryproto',
-                                [104, 117, 123], None,
-                                '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/field', nout=67)
+        print >>f, all_conv_net(
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image',
+            '/scratch/be/LMDB/TESTING/image',
+            None, './examples/distilling/behance.binaryproto',
+            #[104, 117, 123], None,
+            '/scratch/be/LMDB/TESTING/field',
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/field',
+            nout=67)
 
     # for this dataset contains about 55,000 testing iamges, test_iter = 250 (batchsize = 256)
     # test_interval = 2000, stepsize = 10,000 (about 2 epchos), max_iter = 100,000 (20 epchos)
@@ -67,22 +100,63 @@ def gen_field_network():
                                           solver_mode='GPU', filename=solver_fn)
     return solver_param
 
+def gen_field_network_alexnet():
+    train_field_net_fn = 'train_field_alexnet.prototxt'
+    test_field_net_fn = 'test_field_alexnet.prototxt'
+    with open(train_field_net_fn, 'w') as f:
+        print >>f, alexnet(
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image',
+            '/scratch/be/LMDB/TRAINING/image',
+            None, './examples/distilling/behance.binaryproto',
+            '/scratch/be/LMDB/TRAINING/field',
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/field',
+            nout=67)
+
+    with open(test_field_net_fn , 'w') as f:
+        print >>f, alexnet(
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image',
+            '/scratch/be/LMDB/TESTING/image',
+            None, './examples/distilling/behance.binaryproto',
+            '/scratch/be/LMDB/TESTING/field',
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/field',
+            nout=67)
+
+    # for this dataset contains about 55,000 testing iamges, test_iter = 250 (batchsize = 256)
+    # test_interval = 2000, stepsize = 10,000 (about 2 epchos), max_iter = 100,000 (20 epchos)
+    # snapshot = 5000 (1epcho)
+    solver_fn = './alexnet_field_solver.prototxt'
+    fn_prefix = 'examples/distilling'
+    solver_param = prepare_net.get_solver(os.path.join(fn_prefix, train_field_net_fn),
+                                          os.path.join(fn_prefix, test_field_net_fn),
+                                          250, 2000, False,
+                                          40,
+                                          10000, 100000,
+                                          5000, 'conv_field',
+                                          solver_mode='GPU', filename=solver_fn)
+    return solver_param
+
 def gen_site_network():
     train_site_net_fn = 'train_site.prototxt'
     test_site_net_fn = 'test_site.prototxt'
     with open(train_site_net_fn, 'w') as f:
-        print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image',
-                                #None, './examples/distilling/behance.binaryproto',
-                                [104, 117, 123], None,
-                                '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/site',
-                                nout=44)
+        #print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image',
+        print >>f, all_conv_net(
+            '/scratch/be/LMDB/TRAINING/image',
+            None, './examples/distilling/behance.binaryproto',
+            #[104, 117, 123], None,
+            '/scratch/be/LMDB/TRAINING/site',
+            # '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/site',
+            nout=44)
 
     with open(test_site_net_fn , 'w') as f:
-        print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image',
-                                #None, './examples/distilling/behance.binaryproto',
-                                [104, 117, 123], None,
-                                '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/site',
-                                nout=44)
+        #print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image',
+        print >>f, all_conv_net(
+            '/scratch/be/LMDB/TESTING/image',
+            None, './examples/distilling/behance.binaryproto',
+            #[104, 117, 123], None,
+            '/scratch/be/LMDB/TESTING/site',
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/site',
+            nout=44)
 
     # for this dataset contains about 55,000 testing iamges, test_iter = 250 (batchsize = 256)
     # test_interval = 2000, stepsize = 10,000 (about 2 epchos), max_iter = 100,000 (20 epchos)
@@ -98,6 +172,44 @@ def gen_site_network():
                                           solver_mode='GPU', filename=solver_fn)
     return solver_param
 
+def gen_site_network_alexnet():
+    train_site_net_fn = 'train_site_alexnet.prototxt'
+    test_site_net_fn = 'test_site_alexnet.prototxt'
+    with open(train_site_net_fn, 'w') as f:
+        #print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image',
+        print >>f, alexnet(
+            '/scratch/be/LMDB/TRAINING/image',
+            None, './examples/distilling/behance.binaryproto',
+            '/scratch/be/LMDB/TRAINING/site',
+            # '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/site',
+            nout=44)
+
+    with open(test_site_net_fn , 'w') as f:
+        #print >>f, all_conv_net('/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image',
+        print >>f, alexnet(
+            '/scratch/be/LMDB/TESTING/image',
+            None, './examples/distilling/behance.binaryproto',
+            '/scratch/be/LMDB/TESTING/site',
+            #'/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/site',
+            nout=44)
+
+    # for this dataset contains about 55,000 testing iamges, test_iter = 250 (batchsize = 256)
+    # test_interval = 2000, stepsize = 10,000 (about 2 epchos), max_iter = 100,000 (20 epchos)
+    # snapshot = 5000 (1epcho)
+    solver_fn = './alexnet_site_solver.prototxt'
+    fn_prefix = 'examples/distilling'
+    solver_param = prepare_net.get_solver(os.path.join(fn_prefix, train_site_net_fn),
+                                          os.path.join(fn_prefix, test_site_net_fn),
+                                          250, 2000, False,
+                                          40,
+                                          10000, 100000,
+                                          5000, 'conv_site',
+                                          solver_mode='GPU', filename=solver_fn)
+    return solver_param
+
 if __name__ == '__main__':
-    gen_field_network()
-    gen_site_network()
+    #gen_field_network()
+    #gen_site_network()
+
+    gen_site_network_alexnet();
+    gen_field_network_alexnet();

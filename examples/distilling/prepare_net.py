@@ -34,6 +34,10 @@ def conv_relu(bottom, ks, nout, stride=1, pad=0, group=1):
                          weight_filler=dict(type='xavier'))
     return conv, L.ReLU(conv, in_place=True)
 
+def fc_relu(bottom, nout):
+    fc = L.InnerProduct(bottom, num_output=nout)
+    return fc, L.ReLU(fc, in_place=True)
+
 def max_pool(bottom, ks, stride=1):
     return L.Pooling(bottom, pool=P.Pooling.MAX, kernel_size=ks, stride=stride)
 
@@ -59,7 +63,7 @@ def get_solver(train_net, test_net,
     solver_param.test_initialization = test_initialization
     solver_param.display = display
     solver_param.average_loss = display
-    solver_param.base_lr = 0.01
+    solver_param.base_lr = 0.001
     solver_param.lr_policy = 'step'
     solver_param.stepsize = stepsize
     solver_param.gamma = 0.96

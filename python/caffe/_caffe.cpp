@@ -16,6 +16,7 @@
 
 #include "caffe/caffe.hpp"
 #include "caffe/python_layer.hpp"
+#include "caffe/proto/caffe.pb.h"
 
 // Temporary solution for numpy < 1.7 versions: old macro, no promises.
 // You're strongly advised to upgrade to >= 1.7.
@@ -140,6 +141,24 @@ Solver<Dtype>* GetSolverFromFile(const string& filename) {
 struct NdarrayConverterGenerator {
   template <typename T> struct apply;
 };
+
+string ReadDatumFromImage(const string& filename, const int label,
+    const int height, const int width, const bool is_color,
+    const std::string & encoding) {
+  Datum datum;
+  ReadImageToDatum(filename, label, height, width, is_color, encoding, &datum);
+  return datum.data();
+}
+
+string DecodeDatumString(string datum_str, bool encoded, bool is_color) {
+  Datum datum;
+  datum.set_encoded(encoded);
+  datum.set_data(datum_str);
+  DecodeDatum(&datum, is_color);
+  string decoded_datum_str;
+  datum.SerializeToString(& decoded_datum_str);
+  return decoded_datum_str;
+}
 
 template <>
 struct NdarrayConverterGenerator::apply<Dtype*> {
@@ -276,6 +295,10 @@ BOOST_PYTHON_MODULE(_caffe) {
 
   bp::def("get_solver", &GetSolverFromFile,
       bp::return_value_policy<bp::manage_new_object>());
+  bp::def("read_image_to_datum_str", &ReadDatumFromImage,
+      bp::return_value_policy<bp::return_by_value>());
+  bp::def("decode_datumstr", &DecodeDatumString,
+      bp::return_value_policy<bp::return_by_value>());
 
   // vector wrappers for all the vector types we use
   bp::class_<vector<shared_ptr<Blob<Dtype> > > >("BlobVec")

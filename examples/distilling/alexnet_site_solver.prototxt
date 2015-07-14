@@ -1,5 +1,5 @@
-train_net: "examples/distilling/train_site.prototxt"
-test_net: "examples/distilling/test_site.prototxt"
+train_net: "examples/distilling/train_site_alexnet.prototxt"
+test_net: "examples/distilling/test_site_alexnet.prototxt"
 test_iter: 250
 test_interval: 2000
 base_lr: 0.001
@@ -11,7 +11,7 @@ momentum: 0.9
 weight_decay: 0.0002
 stepsize: 10000
 snapshot: 5000
-snapshot_prefix: "./examples/distilling/conv_site"
+snapshot_prefix: "conv_site"
 solver_mode: GPU
 test_initialization: false
 average_loss: 40

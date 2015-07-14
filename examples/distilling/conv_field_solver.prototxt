@@ -11,7 +11,7 @@ momentum: 0.9
 weight_decay: 0.0002
 stepsize: 10000
 snapshot: 5000
-snapshot_prefix: "conv_field"
+snapshot_prefix: "./examples/distilling/conv_field"
 solver_mode: GPU
 test_initialization: false
 average_loss: 10

@@ -1,9 +1,11 @@
 #Test performance of trained model
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 import lmdb
 import sys
 import os, os.path
-from contextlib import nested
+#from contextlib import nested
 
 CAFFE_ROOT = '/mnt/ilcompf0d0/user/xliu/code/caffe/python'
 sys.path.append(CAFFE_ROOT)
@@ -11,7 +13,7 @@ import caffe
 from caffe.io import caffe_pb2
 import matplotlib.pyplot as plt
 import sklearn
-import sklearn.metric
+import sklearn.metrics
 
 def get_net(network_fn, model_fn, mode='CPU'):
     if mode == 'CPU':
@@ -74,6 +76,7 @@ class Data_CaffeNet_Classifier:
         self.label = None
         self.classifications = None
         self.expanded_label_array = None
+        self.compressed_label = True
 
     def set_mean(self, image_mean):
         if type(image_mean) is str:
@@ -156,21 +159,26 @@ class Data_CaffeNet_Classifier:
         self.average_precision = dict()
         self.auc = dict()
 
+        # if labels are compressed, expand first
+        if self.compressed_label and self.expanded_label_array is None:
+            print "Expand Compressed Labels..."
+            Data_CaffeNet_Classifier.expand_label_array(self)
+
         n_class = self.classifications.shape[1]
         for i in range(n_class):
             y_pred = self.classifications[:, i]
             y = self.expanded_label_array[:,i]
-            self.p[i], self.r[i], _ = sklearn.metric.precision_recall_curve(y, y_pred)
-            self.average_precision[i] = sklearn.metric.average_precision_score(y, y_pred)
-            self.auc[i] = sklearn.metric.auc(self.r[i], self.p[i], reorder=True)
+            self.p[i], self.r[i], _ = sklearn.metrics.precision_recall_curve(y, y_pred)
+            self.average_precision[i] = sklearn.metrics.average_precision_score(y, y_pred)
+            self.auc[i] = sklearn.metrics.auc(self.r[i], self.p[i], reorder=True)
         # compute the overall measurements
         self.p['micro'], self.r['micro'], _ = \
-                                              sklearn.metric.precision_recall_curve(
+                                              sklearn.metrics.precision_recall_curve(
                                                   self.expanded_label_array.ravel(),
                                                   self.classifications.ravel())
-        self.average_precision['overall'] = sklearn.metric.average_precision_score(
+        self.average_precision['overall'] = sklearn.metrics.average_precision_score(
             self.expanded_label_array, self.classifications, average='micro')
-        self.auc['micro'] = sklearn.metric.auc(self.r['micro'], self.p['micro'], reorder=True)
+        self.auc['micro'] = sklearn.metrics.auc(self.r['micro'], self.p['micro'], reorder=True)
 
 
     def plot_curve(x, y, label, title, figure_fn=None):
@@ -205,61 +213,60 @@ class LMDB_CaffeNet_Classifier(Data_CaffeNet_Classifier):
         self.data_lmdb = data_lmdb
         self.label_lmdb = label_lmdb
 
-    """
-    load data from LMDB backend
-    compressed_label is a flag to indicate whether or not the label are compact or expanded
-    e.g., [1, 4, 5] vs [0 1 0 0 1 1...]
-    """
+
     def load_data(self, data_lmdb, image_mean, label_lmdb=None, compressed_label=True):
         LMDB_CaffeNet_Classifier.set_data(self, data_lmdb, label_lmdb)
         Data_CaffeNet_Classifier.set_mean(self, image_mean)
         self.data = []
         self.label = []
+
         print "Reading all data into memory..."
         print "****************INFO*********************"
+        print "\t Reading data from {}".format(self.data_lmdb)
+        print "\t Substracting image mean from {}".format(image_mean)
+        img_data = LMDB_CaffeNet_Classifier.load_from_lmdb(self, self.data_lmdb)
+
+        # Decode img_data
+        for datum in img_data:
+            img = extract_sample_from_datum(datum, self.mean)
+            self.data.append(img)
         if self.label_lmdb is not None:
-            # read data and label from two lmdbs
-            print "\t Reading data from {}".format(self.data_lmdb)
-            print "\t Reading label from {}".format(self.label_lmdb)
-            print "\t Substracting image mean from {}".format(image_mean)
-
-            with nested(lmdb.open(self.data_lmdb, readonly=True),
-                        lmdb.open(self.label_lmdb, readonly=True)) as \
-                (data_lmdb, label_lmdb):
-                with nested(data_lmdb.begin(), label_lmdb.begin()) \
-                     as (data_txn, label_txn):
-                    data_cursor = data_txn.cursor()
-                    label_cursor = label_txn.cursor()
-                    for key, value in data_cursor:
-                        datum = caffe_pb2.Datum()
-                        label_datum = caffe_pb2.Datum()
-                        datum.ParseFromString(value)
-                        img_data = extract_sample_from_datum(datum, self.mean)
-                        self.data.append(img_data)
-                        # get label
-                        label_value = label_cursor.get(key)
-                        label_datum.ParseFromString(label_value)
-                        label = caffe.io.datum_to_array(label_datum)
-                        self.label.append(label)
+            LMDB_CaffeNet_Classifier.load_label(self, self.label_lmdb, compressed_label)
         else:
-            print "\t Reading data and label from {}".format(self.data_lmdb)
-            print "\t Substracting image mean from {}".format(image_mean)
-
-            # in this case, label are not expanded
-            compressed_label = True
-            # label and data are in the same datum
-            with lmdb.open(self.data_lmdb) as data_lmdb:
-                with data_lmdb.begin() as data_txn:
-                    data_cursor = data_txn.cursor()
-                    for key, value in data_cursor:
-                        datum = caffe_pb2.Datum()
-                        datum.ParseFromString(value)
-                        img_data = extract_sample_from_datum(datum, self.mean)
-                        self.data.append(datum)
-                        # get label
-                        self.label.append(datum.label)
+            print "\t Reading label from {}".format(self.data_lmdb)
+            self.compressed_label = True
+            for datum in img_data:
+                self.label.append(datum.label)
         print "**************Data Reading Done****************"
 
-        if not compressed_label:
-            print "Label loaded are already expanded. Transform to numpy array format"
-            self.expanded_label_array = np.array(self.label)
+
+    """
+    Load only labels from LMDB
+    """
+    def load_label(self, label_lmdb, compressed_label=True):
+        self.label = []
+        self.label_lmdb = label_lmdb
+        self.compressed_label = compressed_label
+
+        print "***************Reading Label******************"
+        print "\t Reading labels from {}".format(self.label_lmdb)
+        print "\t Label Compressed = {}".format(compressed_label)
+
+        data = LMDB_CaffeNet_Classifier.load_from_lmdb(self, self.label_lmdb)
+        for datum in data:
+            # decode datum
+            label=caffe.io.datum_to_array(datum)
+            self.label.append(label)
+        self.expanded_label_array = None
+
+    # Load data from LMDB backend
+    def load_from_lmdb(self, lmdb_fn):
+        data = []
+        with lmdb.open(lmdb_fn, readonly=True) as db:
+            with db.begin() as txn:
+                cursor = txn.cursor()
+                for key, value in cursor:
+                    datum = caffe_pb2.Datum()
+                    datum.ParseFromString(value)
+                    data.append(datum)
+        return data

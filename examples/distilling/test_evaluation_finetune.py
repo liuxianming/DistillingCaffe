@@ -54,10 +54,10 @@ def evaluate_task(task_name, model, network='deploy.prototxt',
 """Plot bars given dicts as input:
 dicts is a dictionary of dictionary, dicts.key is the name of task, and dict.value is a dictionary to plot
 """
-def plot_bars(dicts, figure_fn='./bar_plot.png'):
+def plot_bars(dicts, ax):
     colors = "bgrcmykw"
-    fig, ax = plt.subplots()
-    fig.set_size_inches(20, 16)
+    #fig, ax = plt.subplots()
+    #fig.set_size_inches(20, 16)
     rects = []
     # prepare axes
     performance = dicts.values()[0]
@@ -77,8 +77,8 @@ def plot_bars(dicts, figure_fn='./bar_plot.png'):
     ax.set_xticklabels(performance.keys())
     ax.legend( rects, dicts.keys() )
     # save to file
-    plt.show()
-    plt.savefig(figure_fn)
+    #plt.show()
+    #plt.savefig(figure_fn)
 
 def main():
     tasks = ['Retrain_Conv5', 'Retrain_Conv3', 'finetune_fc8']
@@ -90,6 +90,7 @@ def main():
     plot_class_specfic_auc(tasks)
 
 def plot_class_specfic_auc(tasks):
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20,16), sharex=True)
     tasks_dicts = {}
     for task in tasks:
         # load data
@@ -97,8 +98,18 @@ def plot_class_specfic_auc(tasks):
         with open(auc_fn,'r') as f:
             performance = pickle.load(f)
             tasks_dicts[task] = performance
-    plot_bars(tasks_dicts, figure_fn = './class_specific_comparison.png')
+    plot_bars(tasks_dicts, ax1)
+
+    # now plot training sample distribution
+    label_dist = np.load('./training_label_distribution.npy')
+    ind = np.arange(label_dist.shape[0]) * len(tasks)
+    ax2.bar(ind, label_dist, 0.75 * len(tasks))
+    ax2.set_ylabel('Number of Training Samples')
+    plt.show()
+    plt.savefig('class_specific_performance.png')
 
 
 if __name__ == "__main__":
     main()
+    # to plot the class specific performance,
+    # should run get_training_stat.py first to generate the training label distribution

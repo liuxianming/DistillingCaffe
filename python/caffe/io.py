@@ -41,6 +41,18 @@ def decode_datum(datum, is_color=True):
     datum.ParseFromString(decoded_datum_str)
     return datum
 
+def read_net_param(param_file):
+    netparam_str = read_netparamstr_from_file(param_file)
+    netparam = caffe_pb2.NetParameter()
+    netparam.ParseFromString(netparam_str)
+    return netparam
+
+def read_solver_param(param_file):
+    solverparam_str = read_solverparamstr_from_file(param_file)
+    solverparam = caffe_pb2.SolverParameter()
+    solverparam.ParseFromString(solverparam_str)
+    return solverparam
+
 ## proto / datum / ndarray conversion
 def blobproto_to_array(blob, return_diff=False):
     """

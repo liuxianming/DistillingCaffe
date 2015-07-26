@@ -18,9 +18,9 @@ site_network_fn='/mnt/ilcompf0d0/user/xliu/code/caffe/examples/distilling/deploy
 site_model_fn = '/mnt/ilcompf0d0/user/xliu/code/caffe/examples/distilling/conv_site_iter_30000.caffemodel'
 
 print "Testing Field Performance==================================="
-tester.load_data(test_image_lmdb, image_mean, label_lmdb=test_field_lmdb, compressed_label=False)
-
 tester.set_network(field_network_fn, field_model_fn, mode='GPU')
+tester.visualize_filter(figure_fn='field_conv1_filter.png', layer='Convolution1')
+tester.load_data(test_image_lmdb, image_mean, label_lmdb=test_field_lmdb, compressed_label=False)
 tester.classify_dataset()
 
 # calculate performance
@@ -38,8 +38,9 @@ with open('field_auc.p', 'wb') as f_a_fp:
     pickle.dump(tester.auc, f_a_fp)
 
 # Test site classification
-tester.load_label(test_site_lmdb, compressed_label=False)
 tester.set_network(site_network_fn, site_model_fn, mode='GPU')
+tester.visualize_filter(figure_fn='site_conv1_filter.png', layer='Convolution1')
+tester.load_label(test_site_lmdb, compressed_label=False)
 tester.classify_dataset()
 
 # calculate performance

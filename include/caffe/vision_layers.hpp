@@ -373,7 +373,6 @@ class LRNLayer : public Layer<Dtype> {
   vector<Blob<Dtype>*> product_bottom_vec_;
 };
 
-
 /**
  * @brief Pools the input image by taking the max, average, etc. within regions.
  *

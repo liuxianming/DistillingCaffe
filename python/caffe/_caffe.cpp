@@ -17,6 +17,7 @@
 #include "caffe/caffe.hpp"
 #include "caffe/python_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
+#include "caffe/util/upgrade_proto.hpp"
 
 // Temporary solution for numpy < 1.7 versions: old macro, no promises.
 // You're strongly advised to upgrade to >= 1.7.
@@ -209,6 +210,22 @@ bp::object Blob_Reshape(bp::tuple args, bp::dict kwargs) {
   return bp::object();
 }
 
+string Read_NetParam_From_File(const string param_file) {
+  NetParameter param;
+  ReadNetParamsFromTextFileOrDie(param_file, &param);
+  string param_str;
+  param.SerializeToString(&param_str);
+  return param_str;
+}
+
+string Read_SolverParam_From_File(const string param_file) {
+  SolverParameter param;
+  ReadProtoFromTextFileOrDie(param_file, &param);
+  string param_str;
+  param.SerializeToString(&param_str);
+  return param_str;
+}
+
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(SolveOverloads, Solve, 0, 1);
 
 BOOST_PYTHON_MODULE(_caffe) {
@@ -298,6 +315,10 @@ BOOST_PYTHON_MODULE(_caffe) {
   bp::def("read_image_to_datum_str", &ReadDatumFromImage,
       bp::return_value_policy<bp::return_by_value>());
   bp::def("decode_datumstr", &DecodeDatumString,
+      bp::return_value_policy<bp::return_by_value>());
+  bp::def("read_netparamstr_from_file", &Read_NetParam_From_File,
+      bp::return_value_policy<bp::return_by_value>());
+  bp::def("read_solverparamstr_from_file", &Read_SolverParam_From_File,
       bp::return_value_policy<bp::return_by_value>());
 
   // vector wrappers for all the vector types we use

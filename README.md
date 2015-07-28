@@ -32,3 +32,8 @@ Please cite Caffe in your publications if it helps your research:
       Title = {Caffe: Convolutional Architecture for Fast Feature Embedding},
       Year = {2014}
     }
+# Caffe Documentation
+
+To generate the documentation, run `$CAFFE_ROOT/scripts/build_docs.sh`.
+
+To push your changes to the documentation to the gh-pages branch of your or the BVLC repo, run `$CAFFE_ROOT/scripts/deploy_docs.sh <repo_name>`.

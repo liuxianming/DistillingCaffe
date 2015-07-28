@@ -9,7 +9,7 @@ import pickle
 import scipy.misc
 import time
 
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Pipe
 
 """Some util function
 """
@@ -306,16 +306,23 @@ class PrefetchMultiClassDataLayer(caffe.Layer):
             self._top_label_shape = (self._batch_size, 1, 1, 1)
             # then return the cursor to the initial position
             self._cur.first()
+            """
             # prepare the prefetech process
-            self._blob_queue = Queue(10)
+            self._blob_queue = Queue(30)
             self._prefetch_process = BatchFetcher(self._blob_queue, self._cur, self._label_cur,
+                                                  self._mean_file, self._resize, self._top_data_shape)
+            """
+            # using pipe() instead of queue to speed up
+            self._conn, conn = Pipe()
+            self._prefetch_process = BatchFetcher(conn, self._cur, self._label_cur,
                                                   self._mean_file, self._resize, self._top_data_shape)
             print "Start prefeteching process..."
             self._prefetch_process.start()
             def cleanup():
-                print 'Terminating BlobFetcher'
+                print 'Terminating BatchFetcher Process working in backend'
                 self._prefetch_process.terminate()
                 self._prefetch_process.join()
+                self._conn.close()
             import atexit
             atexit.register(cleanup)
         except ():
@@ -339,10 +346,7 @@ class PrefetchMultiClassDataLayer(caffe.Layer):
 
 
     def _get_next_minibatch(self):
-        start = time.time()
-        batch =  self._blob_queue.get()
-        end = time.time()
-        print "Get a batch from queue, cost {} seconds".format(end-start)
+        batch = self._conn.recv()
         return batch
 
     def reshape(self, bottom, top):
@@ -358,9 +362,9 @@ class PrefetchMultiClassDataLayer(caffe.Layer):
 
 
 class BatchFetcher(Process):
-    def __init__(self, queue, img_db_cursor, label_cursor, image_mean, resize, top_shape):
+    def __init__(self, conn, img_db_cursor, label_cursor, image_mean, resize, top_shape):
         super(BatchFetcher, self).__init__()
-        self._queue = queue
+        self._conn = conn
         self._cur = img_db_cursor
         self._label_cur = label_cursor
         self._top_shape = top_shape
@@ -441,8 +445,5 @@ class BatchFetcher(Process):
     def run(self):
         print "BatchFetcher started!"
         while True:
-            start = time.time()
             batch = self._get_next_minibatch()
-            self._queue.put(batch)
-            end = time.time()
-            print "A new batch generated, costs {} seconds".format(end-start)
+            self._conn.send(batch)

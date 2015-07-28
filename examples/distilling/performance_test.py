@@ -99,7 +99,7 @@ def vis_square(data, figure_fn=None, padsize=1, padval=0, color_map='gray'):
 def visualize_network_filter(network_fn, model_fn, base_dir='./', figure_fn=None, layer='conv1'):
     os.chdir(base_dir)
     print 'Chaning to dir = {}'.format(base_dir)
-    net = get_net(os.path.join(base_dir, network_fn), os.path.join(base_dir, model_fn))
+    net = get_net(network_fn, model_fn)
     plt.clf()
     if layer not in net.params.keys():
         print "Wrong Layer Name: {}".format(layer)

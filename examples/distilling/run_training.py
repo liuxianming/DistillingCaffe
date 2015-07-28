@@ -60,12 +60,13 @@ def build_layer_name_map(network_param):
         layer_name_map[layer_param.name] = layer_param
     return layer_name_map
 
-def run_task(task_dir, task_solver_fn, base_model_fn, gpu_id):
+def run_task(task_dir, task_solver_fn, base_model_fn, gpu_id, task_type):
     os.chdir(task_dir)
     caffe.set_mode_gpu()
     caffe.set_device(gpu_id)
     solver = caffe.SGDSolver(task_solver_fn)
-    solver.net.copy_from(base_model_fn)
+    if task_type in ['retrain', 'finetune']:
+        solver.net.copy_from(base_model_fn)
     solver.solve()
 
 # run_task, task_type = 'retrain' or 'finetune'
@@ -86,7 +87,7 @@ def run_net(gpu_id, retrain_layer_name_list, task_name, task_type='retrain'):
         print >> f, modify_net(base_deploy_net_param, retrain_layer_name_list, task_name, task_type)
     with open(task_solver_fn, 'w') as f:
         print >> f, base_solver
-    run_task(task_root_dir, task_solver_fn, base_model_fn, gpu_id)
+    run_task(task_root_dir, task_solver_fn, base_model_fn, gpu_id, task_type=task_type)
 
 def modify_net(base_net_param, retrain_layer_name_list, task_name, task_type='retrain'):
     target_net_param = base_net_param
@@ -102,10 +103,18 @@ def modify_net(base_net_param, retrain_layer_name_list, task_name, task_type='re
                     param.lr_mult = 0
         for layer_name in retrain_layer_name_list:
             target_layer_name_map[layer_name].name = layer_name + '-finetune'
+    elif task_type == 'sketch':
+        # train from sketch
+        target_net_param = base_net_param
     return target_net_param
 
 if __name__=="__main__":
     task_id = int(sys.argv[1])
+    if len(sys.argv) > 2:
+        task = sys.argv[2]
+    else:
+        task = 'sketch'
+
     if task_id == 0:
         task_name = "Retrain_Conv5"
         print "Run task [{}]".format(task_name)
@@ -130,3 +139,8 @@ if __name__=="__main__":
         task_type = 'finetune'
         train_layer_name_list = ['fc8', 'fc7', 'fc6']
         run_net(task_id, train_layer_name_list, task_name, task_type=task_type)
+    if task_id == -1:
+        task_name = 'train_sketch'
+        print "Run task [{}]".format(task_name)
+        task_type = 'sketch'
+        run_net(0, [], task_name, task_type=task_type)

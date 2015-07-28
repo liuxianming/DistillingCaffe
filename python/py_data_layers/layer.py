@@ -7,6 +7,9 @@ import yaml
 import sys
 import pickle
 import scipy.misc
+import time
+
+from multiprocessing import Process, Queue
 
 """Some util function
 """
@@ -17,18 +20,24 @@ instead of the io functions provided by caffe python wrapper
 """
 def extract_sample_from_datum(datum, image_mean, resize=-1):
     # extract numpy array from datum, then substract the mean_image
-    if datum.encoded == True:
-        # by default, the decoding include color space transform, to RGB
-        datum = caffe.io.decode_datum(datum)
-    img_data = caffe.io.datum_to_array(datum)
+    img_data = decode_datum(datum)
     img_data = substract_mean(img_data, image_mean)
     if resize == -1:
         return img_data
     else:
         # resize image: first transfer back to h * w * c, -> resize -> c * h * w
-        img_data = img_data.transpose(1,2,0)
-        img_data = scipy.misc.imresize(img_data, (resize, resize))
-        return img_data.transpose(2,0,1)
+        resize_img_data(img_data, resize)
+
+def resize_img_data(img_data, resize):
+    img_data = img_data.transpose(1,2,0)
+    img_data = scipy.misc.imresize(img_data, (resize, resize))
+    return img_data.transpose(2,0,1)
+
+def decode_datum(datum):
+    if datum.encoded == True:
+        datum = caffe.io.decode_datum(datum)
+    img_data = caffe.io.datum_to_array(datum)
+    return img_data
 
 def extract_sample_from_image(image_fn, image_mean):
     # extract image data from image file directly,
@@ -209,6 +218,7 @@ class MultiClassDataLayer(caffe.Layer):
         # load data into memory but don't decode them
         # decode datum online when generating mini-batch
         print "Preloading data from LMDB..."
+        start = time.time()
         self._cur.first()
         while True:
             value_str = self._cur.value()
@@ -217,6 +227,8 @@ class MultiClassDataLayer(caffe.Layer):
             self._data.append(datum)
             if not self._cur.next():
                 break
+        end = time.time()
+        print "Preloading image data done [{} second]".format(end-start)
 
     def _preload_label(self):
         # use the first label as output,
@@ -231,9 +243,190 @@ class MultiClassDataLayer(caffe.Layer):
 
             if not self._label_cur.next():
                 break
+        print "Preloading labels done"
 
     def _get_next_minibatch(self):
+        start = time.time()
         batch = np.zeros(self._top_data_shape)
+        label_batch = np.zeros(self._top_label_shape)
+        # decode and return a tuple (data_batch, label_batch)
+        for idx in range(self._batch_size):
+            datum = self._data[self._pos]
+            img_data  = extract_sample_from_datum(datum, self._mean, self._resize)
+            batch[idx, ...] = img_data
+            label_batch[idx, ...] = self._label[self._pos]
+
+            self._pos =( self._pos + 1) % self._n_samples
+        end = time.time()
+        print "Get a batch costs [{} seconds]".format(end-start)
+        return (batch, label_batch)
+
+    def reshape(self, bottom, top):
+        pass
+
+    def forward(self, bottom, top):
+        start = time.time()
+        blob, label_blob = self._get_next_minibatch()
+        #blob.reshape(*(top[0].data.shape))
+        #label_blob.reshape(*(top[1].shape))
+        # by default, caffe use float instead of double
+        top[0].data[...] = blob.astype(np.float32, copy=False)
+        top[1].data[...] = label_blob.astype(np.float32, copy=False)
+        end = time.time()
+        print "One iteration of forward: {} seconds".format(end-start)
+
+    def backward(self, top, propagate_down, bottom):
+        pass
+
+class PrefetchMultiClassDataLayer(caffe.Layer):
+    def setup(self, bottom, top):
+        # add a filed named "param_str" in python_param, in prototxt
+        layer_params = yaml.load(self.param_str_)
+        try:
+            self._batch_size = int(layer_params['batch_size'])
+            if 'resize' in layer_params.keys():
+                self._resize = layer_params['resize']
+            else:
+                self._resize = -1
+
+            print "Setting up python data layer"
+            self._mean_file = layer_params['mean_file']
+            self._db_name = layer_params['source']
+            self._label_db_name = layer_params['label_source']
+            self._set_up_db()
+            # reshape the top layer
+            top[1].reshape(self._batch_size, 1, 1, 1)
+            # fetch a datum from self._db to get size of images
+            datum = self._get_a_datum(self._cur)
+            img_data = decode_datum(datum)
+            if self._resize > 0:
+                img_data = resize_img_data(img_data, self._resize)
+            top[0].reshape(self._batch_size, *(img_data.shape))
+            self._top_data_shape = top[0].data.shape
+            self._top_label_shape = (self._batch_size, 1, 1, 1)
+            # then return the cursor to the initial position
+            self._cur.first()
+            # prepare the prefetech process
+            self._blob_queue = Queue(10)
+            self._prefetch_process = BatchFetcher(self._blob_queue, self._cur, self._label_cur,
+                                                  self._mean_file, self._resize, self._top_data_shape)
+            print "Start prefeteching process..."
+            self._prefetch_process.start()
+            def cleanup():
+                print 'Terminating BlobFetcher'
+                self._prefetch_process.terminate()
+                self._prefetch_process.join()
+            import atexit
+            atexit.register(cleanup)
+        except ():
+            print "Network Python Layer Definition Error"
+            sys.exit
+
+    def _get_a_datum(self, cursor):
+        value_str = cursor.value()
+        datum = caffe_pb2.Datum()
+        datum.ParseFromString(value_str)
+        return datum
+
+    def _set_up_db(self):
+        self._db = lmdb.open(self._db_name)
+        self._label_db = lmdb.open(self._label_db_name)
+        self._cur = self._db.begin().cursor()
+        self._label_cur = self._label_db.begin().cursor()
+        self._cur.first()
+        self._label_cur.first()
+        print "Starting process for {} / {}".format(self._db_name, self._label_db_name)
+
+
+    def _get_next_minibatch(self):
+        start = time.time()
+        batch =  self._blob_queue.get()
+        end = time.time()
+        print "Get a batch from queue, cost {} seconds".format(end-start)
+        return batch
+
+    def reshape(self, bottom, top):
+        pass
+
+    def forward(self, bottom, top):
+        blob, label_blob = self._get_next_minibatch()
+        top[0].data[...] = blob.astype(np.float32, copy=False)
+        top[1].data[...] = label_blob.astype(np.float32, copy=False)
+
+    def backward(self, top, propagate_down, bottom):
+        pass
+
+
+class BatchFetcher(Process):
+    def __init__(self, queue, img_db_cursor, label_cursor, image_mean, resize, top_shape):
+        super(BatchFetcher, self).__init__()
+        self._queue = queue
+        self._cur = img_db_cursor
+        self._label_cur = label_cursor
+        self._top_shape = top_shape
+        self._batch_size = top_shape[0]
+        self._top_label_shape = (self._batch_size, 1, 1, 1)
+        self._set_mean(image_mean)
+        self._label = []
+        self._data = []
+        self._resize = resize
+        self._preload_db()
+
+    def _preload_db(self):
+        self._preload_data()
+        self._preload_label()
+        self._n_samples = len(self._data)
+        self._pos = 0
+
+    def _set_mean(self, image_mean):
+        if type(image_mean) is str:
+            # read image mean from file
+            try:
+                # if it is a pickle file
+                self._mean = np.load(image_mean)
+            except (IOError):
+                blob = caffe_pb2.BlobProto()
+                blob_str = open(image_mean, 'rb').read()
+                blob.ParseFromString(blob_str)
+                self._mean = np.array(caffe.io.blobproto_to_array(blob))[0]
+            # self.mean = self.mean.transpose(1,2,0)
+        else:
+            self._mean = image_mean
+        print "[Debug Info]: Image Mean Shape = {}".format(self._mean.shape)
+
+    def _preload_data(self):
+        # load data into memory but don't decode them
+        # decode datum online when generating mini-batch
+        print "Preloading data from LMDB..."
+        start = time.time()
+        self._cur.first()
+        while True:
+            value_str = self._cur.value()
+            datum = caffe_pb2.Datum()
+            datum.ParseFromString(value_str)
+            self._data.append(datum)
+            if not self._cur.next():
+                break
+        end = time.time()
+        print "Preloading image data done [{} second]".format(end-start)
+
+    def _preload_label(self):
+        # use the first label as output,
+        # turn a mutli-label problem into a multi-class problem
+        self._label_cur.first()
+        while True:
+            value_str = self._label_cur.value()
+            datum = caffe_pb2.Datum()
+            datum.ParseFromString(value_str)
+            label_vec = caffe.io.datum_to_array(datum).flatten()
+            self._label.append(label_vec[0])
+
+            if not self._label_cur.next():
+                break
+        print "Preloading labels done"
+
+    def _get_next_minibatch(self):
+        batch = np.zeros(self._top_shape)
         label_batch = np.zeros(self._top_label_shape)
         # decode and return a tuple (data_batch, label_batch)
         for idx in range(self._batch_size):
@@ -245,16 +438,11 @@ class MultiClassDataLayer(caffe.Layer):
             self._pos =( self._pos + 1) % self._n_samples
         return (batch, label_batch)
 
-    def reshape(self, bottom, top):
-        pass
-
-    def forward(self, bottom, top):
-        blob, label_blob = self._get_next_minibatch()
-        #blob.reshape(*(top[0].data.shape))
-        #label_blob.reshape(*(top[1].shape))
-        # by default, caffe use float instead of double
-        top[0].data[...] = blob.astype(np.float32, copy=False)
-        top[1].data[...] = label_blob.astype(np.float32, copy=False)
-
-    def backward(self, top, propagate_down, bottom):
-        pass
+    def run(self):
+        print "BatchFetcher started!"
+        while True:
+            start = time.time()
+            batch = self._get_next_minibatch()
+            self._queue.put(batch)
+            end = time.time()
+            print "A new batch generated, costs {} seconds".format(end-start)

@@ -88,6 +88,9 @@ def main():
         evaluate_task(task, model=model)
     """
     plot_class_specfic_auc(tasks)
+    plt.clf()
+    conf_matrix = np.load('./training_label_confusion_mat.npy')
+    plot_confusion_matrix(conf_matrix)
 
 def plot_class_specfic_auc(tasks):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20,16), sharex=True)
@@ -108,6 +111,13 @@ def plot_class_specfic_auc(tasks):
     plt.show()
     plt.savefig('class_specific_performance.png')
 
+
+def plot_confusion_matrix(confusion_mat, figure_fn='./confusion_matrix.png', title='Confusion Matrix', label='categories'):
+    plt.imshow(confusion_mat, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.title(title)
+    plt.xlabel(label)
+    plt.ylabel(label)
+    plt.savefig(figure_fn)
 
 if __name__ == "__main__":
     main()

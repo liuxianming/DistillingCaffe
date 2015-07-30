@@ -30,6 +30,7 @@ def read_datum_from_image(
     else:
         datum.encoded = False
     datum.data = data
+    datum.label = label
     return datum
 
 """

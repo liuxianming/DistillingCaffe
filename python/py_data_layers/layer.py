@@ -5,11 +5,10 @@ import numpy as np
 import lmdb
 import yaml
 import sys
-import pickle
 import scipy.misc
 import time
 
-from multiprocessing import Process, Queue, Pipe
+from multiprocessing import Process, Pipe
 
 """Some util function
 """

@@ -68,6 +68,7 @@ class PrefetchSiameseLayer(caffe.Layer):
     def setup(self, bottom, top):
         # add a filed named "param_str" in python_param, in prototxt
         layer_params = yaml.load(self.param_str_)
+        print "Using PrefetchSiameseLayer"
         try:
             self._batch_size = int(layer_params['batch_size'])
             if 'resize' in layer_params.keys():
@@ -209,22 +210,26 @@ class SiameseBatchFetcher(Process):
         return rand_id
 
     def _get_next_minibatch(self):
+        start = time.time()
         batch = np.zeros(self._top_shape)
         label_batch = np.zeros(self._top_label_shape)
         # decode and return a tuple (data_batch, label_batch)
         for idx in range(self._batch_size / 2):
             q_id = self._sampling()
-            print q_id
             # generate positive pair and a negative pair for each query sample
             ref_type = [True, False]
             datum = self._data[q_id]
             img_data  = extract_sample_from_datum(datum, self._mean, self._resize)
-            for positive in ref_type:
+            for type_offset in range(2):
+                positive = ref_type[type_offset]
+                datum_offset = 2 * idx + type_offset
                 r_id = self._sampling(q_id, positive)
                 r_datum = self._data[r_id]
                 r_img_data = extract_sample_from_datum(r_datum, self._mean, self._resize)
-                batch[idx, ...] = np.vstack([img_data, r_img_data])
-                label_batch[idx, ...] = 1 if positive else 0
+                batch[datum_offset, ...] = np.vstack([img_data, r_img_data])
+                label_batch[datum_offset, ...] = 1 if positive else 0
+        end = time.time()
+        print "Generating a batch costs {} seconds".format(end-start)
         return (batch, label_batch)
 
     def run(self):

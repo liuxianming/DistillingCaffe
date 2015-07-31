@@ -121,7 +121,10 @@ class PrefetchSiameseLayer(caffe.Layer):
         self._cur.first()
 
     def _get_next_minibatch(self):
+        start = time.time()
         batch = self._conn.recv()
+        end = time.time()
+        print "Retrieve a prefetech batch costs {} seconds".format(end-start)
         return batch
 
     def reshape(self, bottom, top):
@@ -203,7 +206,6 @@ class SiameseBatchFetcher(Process):
                 rand_id = np.random.choice(candidates)
                 if rand_id != query_id:
                     break
-            print "Query / Reference IDs: {} / {} | Labels: {} / {}".format(query_id, rand_id, query_label, self._label[rand_id])
         return rand_id
 
     def _get_next_minibatch(self):
@@ -218,7 +220,7 @@ class SiameseBatchFetcher(Process):
             datum = self._data[q_id]
             img_data  = extract_sample_from_datum(datum, self._mean, self._resize)
             for positive in ref_type:
-                r_id = self._sampling(q_id, ref_type)
+                r_id = self._sampling(q_id, positive)
                 r_datum = self._data[r_id]
                 r_img_data = extract_sample_from_datum(r_datum, self._mean, self._resize)
                 batch[idx, ...] = np.vstack([img_data, r_img_data])
@@ -228,9 +230,9 @@ class SiameseBatchFetcher(Process):
     def run(self):
         print "BatchFetcher started!"
         while True:
-            #start = time.time()
-            #print "Prefetch a new batch..."
+            start = time.time()
+            print "Prefetch a new batch..."
             batch = self._get_next_minibatch()
-            #end = time.time()
-            #print "Prefetch a batch costs {} seconds".format(end - start)
+            end = time.time()
+            print "Prefetch a batch costs {} seconds".format(end - start)
             self._conn.send(batch)

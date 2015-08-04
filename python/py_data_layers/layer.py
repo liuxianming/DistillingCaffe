@@ -368,8 +368,10 @@ class PrefetchMultiClassDataLayer(caffe.Layer):
 
 
 class BatchFetcher(Process):
-    def __init__(self, conn, img_db_cursor, label_cursor,
-                 image_mean, resize, top_shape):
+    def __init__(self, conn,
+                 img_db_cursor, label_cursor,
+                 image_mean,
+                 resize, top_shape):
         super(BatchFetcher, self).__init__()
         self._conn = conn
         self._cur = img_db_cursor
@@ -381,7 +383,7 @@ class BatchFetcher(Process):
         self._label = []
         self._data = []
         self._resize = resize
-        self._preload_db()
+        print "Staring a {} process".format(self._type())
 
     def _type(self):
         return 'BatchFetcher'
@@ -404,10 +406,9 @@ class BatchFetcher(Process):
                 blob_str = open(image_mean, 'rb').read()
                 blob.ParseFromString(blob_str)
                 self._mean = np.array(caffe.io.blobproto_to_array(blob))[0]
-            # self.mean = self.mean.transpose(1,2,0)
         else:
             self._mean = image_mean
-        print "[Debug Info]: Image Mean Shape = {}".format(self._mean.shape)
+        # print "[Debug Info]: Image Mean Shape = {}".format(self._mean.shape)
 
     def _preload_data(self):
         # load data into memory but don't decode them
@@ -457,8 +458,12 @@ class BatchFetcher(Process):
 
     def run(self):
         print "BatchFetcher started!"
+        self._preload_db()
         while True:
+            start = time.time()
             batch = self._get_next_minibatch()
+            end = time.time()
+            print "[{} seconds] Generating a new batch".format(end-start)
             self._conn.send(batch)
 
 """pairlayer.py
@@ -560,7 +565,7 @@ class SiameseBatchFetcher(Process):
         self._data = []
         self._label = []
         self._resize = resize
-        self._preload_db()
+        print "Staring a {} process".format(self._type())
 
     def _type(self):
         return 'SiameseBatchFetcher'
@@ -583,7 +588,7 @@ class SiameseBatchFetcher(Process):
                 self._mean = np.array(caffe.io.blobproto_to_array(blob))[0]
         else:
             self._mean = image_mean
-        print "[Debug Info]: Image Mean Shape = {}".format(self._mean.shape)
+        # print "[Debug Info]: Image Mean Shape = {}".format(self._mean.shape)
 
     def _preload_data(self):
         # load data into memory but don't decode them
@@ -648,10 +653,11 @@ class SiameseBatchFetcher(Process):
 
     def run(self):
         print "BatchFetcher started!"
+        self._preload_db()
         while True:
             start = time.time()
             print "Prefetch a new batch..."
             batch = self._get_next_minibatch()
             end = time.time()
-            print "Prefetch a batch costs {} seconds".format(end - start)
+            print "[{} seconds] Generating a new batch".format(end-start)
             self._conn.send(batch)

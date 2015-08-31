@@ -967,7 +967,7 @@ message V1LayerParameter {
     TRIPLET_LOSS = 40;
     WINDOW_DATA = 24;
     THRESHOLD = 31;
-    
+
   }
   optional LayerType type = 5;
   repeated BlobProto blobs = 6;

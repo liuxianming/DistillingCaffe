@@ -8,6 +8,7 @@
 #include <boost/python/raw_function.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include <numpy/arrayobject.h>
+#include <google/protobuf/text_format.h>
 
 // these need to be included after boost on OS X
 #include <string>  // NOLINT(build/include_order)
@@ -18,6 +19,7 @@
 #include "caffe/python_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/upgrade_proto.hpp"
+#include "caffe/common.hpp"
 
 // Temporary solution for numpy < 1.7 versions: old macro, no promises.
 // You're strongly advised to upgrade to >= 1.7.
@@ -43,13 +45,27 @@ void set_mode_gpu() { Caffe::set_mode(Caffe::GPU); }
 // later if the input files are disturbed before they are actually used, but
 // this saves frustration in most cases).
 static void CheckFile(const string& filename) {
-    std::ifstream f(filename.c_str());
-    if (!f.good()) {
-      f.close();
-      throw std::runtime_error("Could not open file " + filename);
-    }
+  std::ifstream f(filename.c_str());
+  if (!f.good()) {
     f.close();
+    throw std::runtime_error("Could not open file " + filename);
+  }
+  f.close();
 }
+
+/*
+// This function is added recently, to facilitate
+// create Net from either filename or proto string
+static bool CheckFileOrDie(const string& filename) {
+  std::ifstream f(filename.c_str());
+  if (!f.good()) {
+    f.close();
+    return false;
+  }
+  f.close();
+  return true;
+}
+*/
 
 void CheckContiguousArray(PyArrayObject* arr, string name,
     int channels, int height, int width) {
@@ -73,13 +89,36 @@ void CheckContiguousArray(PyArrayObject* arr, string name,
   }
 }
 
+bool ReadNetParamsFromStrOrDie(const string& param_str,
+                            NetParameter* param) {
+  bool success = google::protobuf::TextFormat::ParseFromString(
+      param_str, param);
+  return success;
+}
+
 // Net constructor for passing phase as int
 shared_ptr<Net<Dtype> > Net_Init(
     string param_file, int phase) {
+    // in this case, the input is a file name
   CheckFile(param_file);
-
-  shared_ptr<Net<Dtype> > net(new Net<Dtype>(param_file,
+  shared_ptr<Net<Dtype> > net(new Net<Dtype>(
+      param_file,
       static_cast<Phase>(phase)));
+  return net;
+}
+
+shared_ptr<Net<Dtype> > Net_Init_Str(
+    const char* param_chars, int phase) {
+  // in this case, the input maybe a string from proto
+  NetParameter param;
+  string param_str(param_chars);
+  std::cout<<param_str;
+  if (!ReadNetParamsFromStrOrDie(param_str, &param)) {
+    throw std::runtime_error("Parsing netparameter from string failed");
+  }
+  param.mutable_state()->set_phase(static_cast<Phase>(phase));
+  shared_ptr<Net<Dtype> > net(new Net<Dtype>(
+      param));
   return net;
 }
 
@@ -240,6 +279,7 @@ BOOST_PYTHON_MODULE(_caffe) {
     bp::no_init)
     .def("__init__", bp::make_constructor(&Net_Init))
     .def("__init__", bp::make_constructor(&Net_Init_Load))
+    .def("__init__", bp::make_constructor(&Net_Init_Str))
     .def("_forward", &Net<Dtype>::ForwardFromTo)
     .def("_backward", &Net<Dtype>::BackwardFromTo)
     .def("reshape", &Net<Dtype>::Reshape)

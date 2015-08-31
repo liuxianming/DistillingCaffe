@@ -1,122 +1,148 @@
-#include <algorithm>
-#include <vector>
-
-#include "caffe/layer.hpp"
-#include "caffe/util/io.hpp"
-#include "caffe/util/math_functions.hpp"
-#include "caffe/vision_layers.hpp"
-
+/*
+ * Triplet_loss_layer.cu
+ *
+ * Created on: Jun 2, 2015
+ *     Author: tangwei
+ */
+#include<algorithm>
+#include<vector>
+#include"caffe/layer.hpp"
+#include"caffe/util/io.hpp"
+#include"caffe/util/math_functions.hpp"
+#include"caffe/vision_layers.hpp"
 namespace caffe {
-
 template <typename Dtype>
 void TripletLossLayer<Dtype>::Forward_gpu(
-    const vector<Blob<Dtype>*>& bottom,
+    const vector<Blob<Dtype>*>&bottom,
     const vector<Blob<Dtype>*>& top) {
-  int count = bottom[0]->count();
+  const int count = bottom[0]->count();
   caffe_gpu_sub(
       count,
       bottom[0]->gpu_data(),  // a
-      bottom[1]->gpu_data(),  // b
-      diff_pos.mutable_gpu_data());  // a_i-b_i
+      bottom[1]->gpu_data(),  // p
+      diff_ap_.mutable_gpu_data());  // a_i-p_i
+
   caffe_gpu_sub(
       count,
       bottom[0]->gpu_data(),  // a
-      bottom[2]->gpu_data(),  // c
-      diff_neg.mutable_gpu_data());  // a_i-c_i
+      bottom[2]->gpu_data(),  // n
+      diff_an_.mutable_gpu_data());  //a_i-n_i
+
+  caffe_gpu_sub(
+      count,
+      bottom[1]->gpu_data(),  // p
+      bottom[2]->gpu_data(),  // n
+      diff_pn_.mutable_gpu_data());  // p_i-n_i
+
   caffe_gpu_powx(
       count,
-      diff_pos.mutable_gpu_data(),  // a_i-b_i
+      diff_ap_.mutable_gpu_data(),  // a_i-p_i
       Dtype(2),
-      diff_sq_pos.mutable_gpu_data());  // (a_i-b_i)^2
+      diff_sq_ap_.mutable_gpu_data());  // (a_i-p_i)^2
+
+  caffe_gpu_gemv(
+      CblasNoTrans,
+      bottom[0]->num(),
+      bottom[0]->channels(),
+      Dtype(1.0),                                        //alpha
+      diff_sq_ap_.gpu_data(),  // (a_i-p_i)^2                // A
+      summer_vec_.gpu_data(),                             // x
+      Dtype(0.0),                                        //belta
+      dist_sq_ap_.mutable_gpu_data());  // \Sum (a_i-p_i)^2  //y
+
   caffe_gpu_powx(
       count,
-      diff_neg.mutable_gpu_data(),  // a_i-c_i
+      diff_an_.mutable_gpu_data(),  // a_i-n_i
       Dtype(2),
-      diff_sq_neg.mutable_gpu_data());  // (a_i-c_i)^2
-  const int channels = bottom[0]->channels();
+      diff_sq_an_.mutable_gpu_data());  // (a_i-n_i)^2
+  caffe_gpu_gemv(
+      CblasNoTrans,
+      bottom[0]->num(),
+      bottom[0]->channels(),
+      Dtype(1.0),                                         //alpha
+      diff_sq_an_.gpu_data(),  // (a_i-n_i)^2                // A
+      summer_vec_.gpu_data(),                             // x
+      Dtype(0.0),                                        //belta
+      dist_sq_an_.mutable_gpu_data());  // \Sum (a_i-n_i)^2  //y
+
   Dtype margin = this->layer_param_.triplet_loss_param().margin();
   Dtype loss(0.0);
-  // Loss component calculated from ab
-  for (int i = 0; i < bottom[0]->num(); ++i) {
-    /*dist_sq_pos.mutable_gpu_data()[i] = caffe_gpu_dot(channels,
-        diff_pos.gpu_data() + (i*channels), diff_pos.gpu_data() + (i*channels));*/
-    // ab is a similar pair
-    dist_sq_.mutable_gpu_data()[i] = dist_sq_pos.gpu_data()[i];
-    // Loss component calculated from ac
-    /*dist_sq_neg.mutable_gpu_data()[i] = caffe_gpu_dot(channels,
-        diff_neg.gpu_data() + (i*channels), diff_neg.gpu_data() + (i*channels));*/
-    // ac is a dissimilar pair
-    dist_sq_.mutable_gpu_data()[i] -= dist_sq_neg.gpu_data()[i];
-    loss += std::max(margin + dist_sq_.gpu_data()[i], Dtype(0.0));
+  for (int i = 0; i < bottom[0]->num();++i) {
+    Dtype mdist = std::max(margin+dist_sq_ap_.cpu_data()[i]- dist_sq_an_.cpu_data()[i], Dtype(0.0));
+    const Dtype s_weight_ = (bottom.size() == 4) ? *(bottom[3]->cpu_data() + i) : 1.0;
+    loss += s_weight_ * mdist;
   }
-  loss = loss / static_cast<Dtype>(bottom[0]->num()) / Dtype(2);
-  top[0]->mutable_gpu_data()[0] = loss;
+  loss = loss /static_cast<Dtype>(bottom[0]->num()) / Dtype(2);
+  top[0]->mutable_cpu_data()[0] = loss;
 }
 
 template <typename Dtype>
-void TripletLossLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-    const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-  Dtype margin = this->layer_param_.triplet_loss_param().margin();
-// there must be further check to ensure the gradient calc
-    if (propagate_down[0]) {
-      const Dtype sign = 1;
-      const Dtype alpha = sign * top[0]->gpu_diff()[0] /
-          static_cast<Dtype>(bottom[0]->num());
-      int num = bottom[0]->num();
-      int channels = bottom[0]->channels();
-      for (int j = 0; j < num; ++j) {
-        Dtype* bout = bottom[0]->mutable_gpu_diff();
-        if ((margin + dist_sq_.gpu_data()[j]) > Dtype(0.0)) {
-        // similar pairs
-          caffe_gpu_axpby(
-              channels,
-              alpha,
-              diff_pos.gpu_data() + (j*channels),
-              Dtype(0.0),
-              bout + (j*channels));
-        // dissimilar pairs
-          caffe_gpu_axpby(
-              channels,
-              -alpha,
-              diff_neg.gpu_data() + (j*channels),
-              Dtype(1.0),
-              bout + (j*channels));
-        } else {
-            caffe_set(channels, Dtype(0), bout + (j*channels));
-        }
+__global__ void CLLBackward(const int count, const int channels,
+                            const Dtype margin, const Dtype alpha,
+                            bool sampled, const Dtype* sampleW,
+                            const Dtype* diff, const Dtype*dist_sq_ap_, const Dtype* dist_sq_an_,
+                            Dtype *bottom_diff) {
+  CUDA_KERNEL_LOOP(i, count) {
+    int n = i / channels;  // the num index, to access dist_sq_ap_ anddist_sq_an_
+    Dtype mdist(0.0);
+    mdist = margin + dist_sq_ap_[n] - dist_sq_an_[n];
+    if (mdist > 0.0) {
+      bottom_diff[i] = alpha * diff[i];
+      if (sampled) {
+        bottom_diff[i] *= sampleW[n];
       }
+    } else {
+      bottom_diff[i] = 0;
     }
-  for (int i = 1; i < 3; ++i) {
-// there must be further check to ensure the gradient calc
+  }
+}
+
+template <typename Dtype>
+void TripletLossLayer<Dtype>::Backward_gpu(
+    const vector<Blob<Dtype>*>& top,
+    const vector<bool>&propagate_down,
+    const vector<Blob<Dtype>*>& bottom) {
+  Dtype margin = this->layer_param_.triplet_loss_param().margin();
+  const int count = bottom[0]->count();
+  const int channels =bottom[0]->channels();
+
+  bool sampled = (bottom.size() == 4) ? true : false;
+  const Dtype* sampleW = sampled ? bottom[3]->gpu_data() : NULL;
+  for (int i = 0; i < 3; ++i) {
     if (propagate_down[i]) {
-      const Dtype sign = (i == 1) ? -1 : 1;
-      const Dtype alpha = sign * top[0]->gpu_diff()[0] /
-          static_cast<Dtype>(bottom[i]->num());
-      int num = bottom[i]->num();
-      int channels = bottom[i]->channels();
-      for (int j = 0; j < num; ++j) {
-        Dtype* bout = bottom[i]->mutable_gpu_diff();
-        if ((margin + dist_sq_.gpu_data()[j]) > Dtype(0.0)) {
-          if (i == 1) {
-        // similar pairs
-          caffe_gpu_axpby(
-              channels,
-              alpha,
-              diff_pos.gpu_data() + (j*channels),
-              Dtype(0.0),
-              bout + (j*channels));
-          } else {
-        // dissimilar pairs
-          caffe_gpu_axpby(
-              channels,
-              alpha,
-              diff_neg.gpu_data() + (j*channels),
-              Dtype(0.0),
-              bout + (j*channels));
-          }
-        } else {
-            caffe_set(channels, Dtype(0), bout + (j*channels));
-        }
+      const Dtype sign = (i < 2) ? -1 : 1;
+      const Dtype alpha = sign *top[0]->cpu_diff()[0] /
+          static_cast<Dtype>(bottom[0]->num());
+      if(i==0){
+        // NOLINT_NEXT_LINE(whitespace/operators)
+        CLLBackward<Dtype><<<CAFFE_GET_BLOCKS(count),CAFFE_CUDA_NUM_THREADS>>>(
+            count, channels, margin, alpha,
+            sampled, sampleW,
+            diff_pn_.gpu_data(),  // the cached eltwise difference between pand n
+            dist_sq_ap_.gpu_data(),  // the cached square distance between a and p
+            dist_sq_an_.gpu_data(),  // the cached square distance between a and n
+            bottom[i]->mutable_gpu_diff());
+        CUDA_POST_KERNEL_CHECK;
+      }else if(i==1){
+        // NOLINT_NEXT_LINE(whitespace/operators)
+        CLLBackward<Dtype><<<CAFFE_GET_BLOCKS(count),CAFFE_CUDA_NUM_THREADS>>>(
+            count, channels, margin, alpha,
+            sampled, sampleW,
+            diff_ap_.gpu_data(),  // the cached eltwise difference between aand p
+            dist_sq_ap_.gpu_data(),  // the cached square distance between a and p
+            dist_sq_an_.gpu_data(),  // the cached square distance between a and n
+            bottom[i]->mutable_gpu_diff());
+        CUDA_POST_KERNEL_CHECK;
+      }else if(i==2){
+        // NOLINT_NEXT_LINE(whitespace/operators)
+        CLLBackward<Dtype><<<CAFFE_GET_BLOCKS(count),CAFFE_CUDA_NUM_THREADS>>>(
+            count, channels, margin, alpha,
+            sampled, sampleW,
+            diff_an_.gpu_data(),  // the cached eltwise difference between aand n
+            dist_sq_ap_.gpu_data(),  // the cached square distance between a and p
+            dist_sq_an_.gpu_data(),  // the cached square distance between a and n
+            bottom[i]->mutable_gpu_diff());
+        CUDA_POST_KERNEL_CHECK;
       }
     }
   }

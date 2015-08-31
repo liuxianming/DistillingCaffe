@@ -9,8 +9,9 @@ layer {
   }
   python_param {
     module: 'py_data_layers.layer'
-    layer: 'PrefetchSiameseLayer'
-    param_str: "{'batch_size': 256, 'mean_file': '../behance.binaryproto', 'source': '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image'}"
+    layer: 'SiameseDataLayer'
+    #layer: 'PrefetchSiameseLayer'
+    param_str: "{'batch_size': 128, 'mean_file': '../behance.binaryproto', 'source': '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TRAINING/image'}"
   }
 }
 layer {
@@ -23,8 +24,9 @@ layer {
   }
   python_param {
     module: 'py_data_layers.layer'
-    layer: 'PrefetchSiameseLayer'
-    param_str: "{'batch_size': 256, 'mean_file': '../behance.binaryproto', 'source': '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image'}"
+    layer: 'SiameseDataLayer'
+    #layer: 'PrefetchSiameseLayer'
+    param_str: "{'batch_size': 128, 'mean_file': '../behance.binaryproto', 'source': '/mnt/ilcompf2d1/data/be/prepared-2015-06-15/LMDB/TESTING/image'}"
   }
 }
 layer {
@@ -357,6 +359,12 @@ layer {
   }
 }
 layer {
+  name: "l2norm"
+  type: "Normalize"
+  bottom: "feat"
+  top: "feat_norm"
+}
+layer {
   name: "conv1_p"
   type: "Convolution"
   bottom: "data_p"
@@ -675,10 +683,16 @@ layer {
   }
 }
 layer {
+  name: "l2norm_p"
+  type: "Normalize"
+  bottom: "feat_p"
+  top: "feat_norm_p"
+}
+layer {
   name: "loss"
   type: "ContrastiveLoss"
-  bottom: "feat"
-  bottom: "feat_p"
+  bottom: "feat_norm"
+  bottom: "feat_norm_p"
   bottom: "sim"
   top: "loss"
   contrastive_loss_param {

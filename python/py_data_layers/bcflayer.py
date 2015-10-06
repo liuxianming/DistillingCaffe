@@ -201,7 +201,7 @@ class BcfLayer(caffe.Layer):
             img_data = extract_sample_from_imgstr(
                 datum, self._mean, self._resize)
             batch[idx, ...] = img_data
-            label_batch[idx, ...] = self._label[self._cur]
+            label_batch[idx, ...] = self._labels[self._cur]
 
             self._cur = (self._cur + 1) % self._n_samples
         end = time.time()

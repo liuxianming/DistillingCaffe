@@ -1,0 +1,23 @@
+n07566340	foodstuff, food product	9
+n07570720	nutriment, nourishment, nutrition, sustenance, aliment, alimentation, victuals	12
+n03247620	drug	4
+n14940386	liquid	4
+n07707451	vegetable, veggie, veg	13
+n13087625	plant organ	16
+n01767661	arthropod	47
+n02075296	carnivore	158
+n02370806	ungulate, hoofed mammal	17
+n01503061	bird	59
+n01661091	reptile, reptilian	36
+n02528163	teleost fish, teleost, teleostan	10
+n03800933	musical instrument, instrument	26
+n04565375	weapon, arm, weapon system	7
+n04451818	tool	14
+n03094503	container	100
+n04524313	vehicle	67
+n04341686	structure, construction	58
+n04599396	work, piece of work	1
+n03122748	covering	90
+n03093574	consumer goods	62
+n13865483	round shape	1
+n06791372	signal, signaling, sign	1

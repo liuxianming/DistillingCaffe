@@ -1,22 +1,21 @@
 import caffe
 from caffe.io import caffe_pb2
 import numpy as np
-#from multiprocessing import Process, Queue
+# from multiprocessing import Process, Queue
 import lmdb
 import yaml
 import sys
 import scipy.misc
 import time
-import numpy.random
+import np.random
 import pickle
 
 from multiprocessing import Process, Pipe
 
-"""Some util function
-"""
 """
 Load data from either datum or from original image
-Here, I used caffe.io.read_datum_from_image to resolve all format transformation,
+Here, I used caffe.io.read_datum_from_image
+to resolve all format transformation,
 instead of the io functions provided by caffe python wrapper
 """
 

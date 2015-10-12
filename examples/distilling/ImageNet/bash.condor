@@ -1,0 +1,20 @@
+#
+# Submit a bash job
+#
+
+condor_job_size = 1
+INITIALDIR = /mnt/ilcompf0d0/user/zhawang/git/caffe-distilling/examples/distilling/ImageNet
+Executable = $(INITIALDIR)/main_train.sh
+Arguments = $(Cluster) $(Process) $(condor_job_size)
+requirements = ( (TARGET.Machine =!= "ilcomp33") && (TARGET.Machine =!= "ilcomp36") && (TARGET.Machine =!= "ilcomp30") )
+Universe = vanilla
+Getenv = True
+LogDir = /mnt/ilcompf0d0/user/zhawang/git/caffe-distilling/examples/distilling/ImageNet/log
+Input = /dev/null
+Output = $(LogDir)/bash.$(Cluster).$(Process).out
+Error = $(LogDir)/bash.$(Cluster).$(Process).err
+should_transfer_files = no
+transfer_executable = false
+#notify_user = zhawang@adobe.com
+
+Queue $(condor_job_size)

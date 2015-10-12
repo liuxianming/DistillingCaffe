@@ -1,7 +1,8 @@
 import caffe
 from caffe.io import caffe_pb2
 import numpy as np
-import yaml
+#import yaml
+import json
 import sys
 import scipy.misc
 import time
@@ -19,10 +20,12 @@ def extract_sample_from_imgstr(imgstr, image_mean=None, resize=-1):
         img_data = decode_imgstr(imgstr)
         if resize > 0:
             img_data = scipy.misc.imresize(img_data, (resize, resize))
+        img_data = img_data.astype(np.float32)
         # change channel for caffe:
-        img_data = img_data.transpose(2, 0, 1)
+        img_data = img_data.transpose(2, 0, 1) #to CxHxW
+        img_data = img_data[(2, 1, 0), :, :] #swap channel
         # substract_mean
-        if image_mean:
+        if image_mean!=None:
             img_data = substract_mean(img_data, image_mean)
         return img_data
     except:
@@ -61,6 +64,7 @@ class BcfLayer(caffe.Layer):
         mean_file: either a file name or a list of numbers
         source: database name
         label_source: database file name for labels
+        label_map: text file mapping labels from imagenet order to caffe order (1-based)
         label_subset: the file name of a subset of all labels,
                       indicates which labels will be used to train
         sample_rate: if were to use subset of labels, and will create
@@ -70,7 +74,8 @@ class BcfLayer(caffe.Layer):
                              by default = 1000
         """
 
-        layer_params = yaml.load(self.param_str_)
+        #layer_params = yaml.load(self.param_str_)
+        layer_params = json.loads(self.param_str_.replace("'", '"'))
         print layer_params
         try:
             self._batch_size = int(layer_params['batch_size'])
@@ -85,6 +90,10 @@ class BcfLayer(caffe.Layer):
             else:
                 self._mean_file = None
             self._set_mean(self._mean_file)
+            if self._resize>0 and self._mean!=None:
+                dy = (self._mean.shape[1] - self._resize)/2
+                dx = (self._mean.shape[2] - self._resize)/2
+                self._mean = self._mean[:, dy:dy+self._resize, dx:dx+self._resize]
 
             """Settting up dbs
             db_name / source: the location of bcf file
@@ -94,6 +103,10 @@ class BcfLayer(caffe.Layer):
 
             self._db_name = layer_params['source']
             self._label_list_name = layer_params['label_source']
+            if 'label_map' in layer_params.keys():
+                self._label_map_name = layer_params['label_map']
+            else:
+                self._label_map_name = None
             if 'label_subset' in layer_params.keys():
                 self._label_subset_name = layer_params['label_subset']
             else:
@@ -120,7 +133,6 @@ class BcfLayer(caffe.Layer):
             datum = self._get_a_datum()
             img_data = extract_sample_from_imgstr(
                 datum, self._mean, self._resize)
-            print type(img_data)
             top[0].reshape(self._batch_size, *(img_data.shape))
             self._top_data_shape = top[0].data.shape
             self._top_label_shape = (self._batch_size, 1, 1, 1)
@@ -133,7 +145,7 @@ class BcfLayer(caffe.Layer):
     def _set_mean(self, image_mean):
         if image_mean is None:
             self._mean = None
-        elif type(image_mean) is str:
+        elif type(image_mean) is str or type(image_mean) is unicode:
             # read image mean from file
             try:
                 # if it is a pickle file
@@ -142,7 +154,7 @@ class BcfLayer(caffe.Layer):
                 blob = caffe_pb2.BlobProto()
                 blob_str = open(image_mean, 'rb').read()
                 blob.ParseFromString(blob_str)
-                self._mean = np.array(caffe.io.blobproto_to_array(blob))[0]
+                self._mean = np.array(caffe.io.blobproto_to_array(blob))[0].astype(np.float32)
             # self.mean = self.mean.transpose(1,2,0)
         else:
             self._mean = image_mean
@@ -158,6 +170,11 @@ class BcfLayer(caffe.Layer):
         bcf = bcfstore.bcf_store_file(self._db_name)
         print('Preloading all labels from %s ' % self._label_list_name)
         labels = np.loadtxt(self._label_list_name).astype(int)
+        if labels.min()==1: #convert to zero based
+            labels = labels-1
+        if self._label_map_name!=None:
+            lblmap = np.loadtxt(self._label_map_name).astype(int)
+            labels = lblmap[labels]-1 #convert to 0 based
 
         if bcf.size() != len(labels):
             print "Number of samples in data and labels are not equal"
@@ -205,7 +222,7 @@ class BcfLayer(caffe.Layer):
 
             self._cur = (self._cur + 1) % self._n_samples
         end = time.time()
-        print "Get a batch costs [{} seconds]".format(end-start)
+        #print "Get a batch costs [{} seconds]".format(end-start)
         return (batch, label_batch)
 
     def reshape(self, bottom, top):
@@ -218,7 +235,7 @@ class BcfLayer(caffe.Layer):
         top[0].data[...] = blob.astype(np.float32, copy=False)
         top[1].data[...] = label_blob.astype(np.float32, copy=False)
         end = time.time()
-        print "One iteration of forward: {} seconds".format(end-start)
+        #print "One iteration of forward: {} seconds".format(end-start)
 
     def backward(self, top, propagate_down, bottom):
         pass

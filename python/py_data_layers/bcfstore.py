@@ -11,6 +11,9 @@ class bcf_store_memory():
         self._memory = file.read()
         file.close()
 
+    def __del__(self):
+        del self._memory[:]
+
     def get(self, i):
         return self._memory[self._offsets[i]:self._offsets[i+1]]
 

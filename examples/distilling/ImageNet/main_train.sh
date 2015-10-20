@@ -46,9 +46,17 @@ resize=227
 label_subset=./subset_list.txt
 sample_rate=0.05
 
-tasks=(n01503061_bird n01767661_arthropod n02528163_fish n04524313_vehicle n01661091_reptile n02075296_carnivore n03800933_instrument)
-task=${tasks[$jobid]}
+# tasks=(n01503061_bird n01767661_arthropod n02528163_fish n04524313_vehicle n01661091_reptile n02075296_carnivore n03800933_instrument)
+# task=${tasks[$jobid]}
+task_fn=${work_dir}/hyponym/tasks.txt
+task=$(sed -n "${jobid}p" "$task_fn")
 task_dir=${work_dir}/${task}
+
+if ! [[ -d task_dir ]]; then
+    mkdir ${task_dir}
+fi
+cp ./hyponym/${task}.txt ./${task_dir}/subset_list.txt
+
 
 # write config files
 solver_target=$task_dir/$(basename $solver)
